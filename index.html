@@ -104,6 +104,97 @@
   /* Copilot section */
   .copilot-note { font-size: 0.78rem; color: var(--muted); padding: 12px; background: var(--surface2); border-radius: 8px; line-height: 1.6; }
   .copilot-note a { color: var(--accent4); }
+
+  /* ── Live Activity Bar ─────────────────────────────── */
+  #liveBar {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 10px 24px;
+    display: flex; align-items: center; gap: 20px;
+    font-size: 0.8rem; overflow: hidden;
+    transition: border-color 0.3s;
+  }
+  #liveBar.flash { border-bottom-color: var(--accent2); }
+
+  .live-label {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 0.7rem; font-weight: 700; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--muted); white-space: nowrap;
+  }
+  .live-label .blink {
+    width: 6px; height: 6px; border-radius: 50%; background: var(--muted);
+    flex-shrink: 0;
+  }
+  .live-label.active .blink {
+    background: var(--green); box-shadow: 0 0 5px var(--green);
+    animation: blink 1.2s ease-in-out infinite;
+  }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+  .live-stat { display: flex; flex-direction: column; gap: 1px; white-space: nowrap; }
+  .live-stat .ls-label { font-size: 0.65rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+  .live-stat .ls-val   { font-weight: 600; }
+
+  .live-divider { width: 1px; height: 28px; background: var(--border); flex-shrink: 0; }
+
+  .live-project {
+    font-size: 0.75rem; color: var(--muted); overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0;
+  }
+  .live-project strong { color: var(--text); }
+
+  /* token burst animation */
+  .ls-val.bump { animation: bump 0.4s cubic-bezier(0.34,1.56,0.64,1); }
+  @keyframes bump { 0%{transform:scale(1)} 50%{transform:scale(1.3)} 100%{transform:scale(1)} }
+
+  /* ── Live Feed Panel ───────────────────────────────── */
+  #feedList {
+    display: flex; flex-direction: column; gap: 0;
+    max-height: 340px; overflow-y: auto;
+  }
+  .feed-item {
+    display: grid;
+    grid-template-columns: 140px 1fr auto auto auto auto;
+    gap: 8px 16px;
+    align-items: center;
+    padding: 8px 12px;
+    border-top: 1px solid var(--border);
+    font-size: 0.78rem;
+    animation: slideIn 0.35s ease-out;
+  }
+  @keyframes slideIn {
+    from { opacity: 0; transform: translateY(-8px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .feed-item:first-child { border-top: none; }
+  .feed-item:hover { background: var(--surface2); }
+  .fi-time  { color: var(--muted); font-size: 0.72rem; font-family: 'SF Mono','Fira Code',monospace; }
+  .fi-proj  { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .fi-model { color: var(--accent); font-size: 0.7rem; }
+  .fi-in    { color: #7c6aff; text-align: right; }
+  .fi-out   { color: #4ade80; text-align: right; }
+  .fi-cost  { color: var(--accent2); font-weight: 600; text-align: right; white-space: nowrap; }
+  .feed-header {
+    display: grid;
+    grid-template-columns: 140px 1fr auto auto auto auto;
+    gap: 8px 16px;
+    padding: 6px 12px;
+    font-size: 0.68rem; color: var(--muted); text-transform: uppercase;
+    letter-spacing: 0.06em; background: var(--surface2);
+    border-radius: 6px 6px 0 0;
+  }
+  .fi-in-h  { text-align: right; }
+  .fi-out-h { text-align: right; }
+  .fi-cost-h{ text-align: right; }
+  .feed-empty { padding: 32px; text-align: center; color: var(--muted); font-size: 0.8rem; }
+
+  /* velocity badge */
+  .vel-badge {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 2px 10px; border-radius: 20px; font-size: 0.72rem; font-weight: 600;
+    background: var(--surface2); border: 1px solid var(--border); white-space: nowrap;
+  }
+  .vel-badge.hot { border-color: var(--accent2); color: var(--accent2); }
 </style>
 </head>
 <body>
@@ -118,6 +209,38 @@
   </div>
   <span class="updated-at" id="updatedAt">—</span>
 </header>
+
+<!-- ── Live Activity Bar ─────────────────────────────────────────────────── -->
+<div id="liveBar">
+  <div class="live-label" id="liveLabel">
+    <div class="blink"></div>
+    LIVE
+  </div>
+  <div class="live-divider"></div>
+  <div class="live-stat">
+    <div class="ls-label">Last Turn · Input</div>
+    <div class="ls-val" id="lsInput">—</div>
+  </div>
+  <div class="live-stat">
+    <div class="ls-label">Output</div>
+    <div class="ls-val" id="lsOutput">—</div>
+  </div>
+  <div class="live-stat">
+    <div class="ls-label">Cache Read</div>
+    <div class="ls-val" id="lsCacheRead">—</div>
+  </div>
+  <div class="live-stat">
+    <div class="ls-label">Turn Cost</div>
+    <div class="ls-val" id="lsTurnCost" style="color:var(--accent2)">—</div>
+  </div>
+  <div class="live-divider"></div>
+  <div class="live-stat">
+    <div class="ls-label">Tokens / min</div>
+    <div class="ls-val" id="lsVelocity">—</div>
+  </div>
+  <div class="live-divider"></div>
+  <div class="live-project" id="lsProject">Waiting for activity…</div>
+</div>
 
 <main>
   <!-- KPI Cards -->
@@ -163,7 +286,17 @@
       <div class="chart-wrap"><canvas id="chartModel"></canvas></div>
     </div>
 
-    <!-- 6. Sessions table -->
+    <!-- 6. Live activity feed -->
+    <div class="card full">
+      <h2>Live Activity Feed <span id="feedCount" style="color:var(--muted);font-weight:400"></span></h2>
+      <div class="feed-header">
+        <span>Time</span><span>Project / Session</span><span>Model</span>
+        <span class="fi-in-h">Input</span><span class="fi-out-h">Output</span><span class="fi-cost-h">Cost</span>
+      </div>
+      <div id="feedList"><div class="feed-empty">Waiting for new Claude Code turns…</div></div>
+    </div>
+
+    <!-- 7. Sessions table -->
     <div class="card full">
       <h2>Sessions</h2>
       <div class="table-wrap" id="sessionsWrap">
@@ -474,6 +607,128 @@ function render(snap) {
   }
 }
 
+// ─── Live Bar + Feed ─────────────────────────────────────────────────────────
+
+const MAX_FEED = 50;           // max rows in feed
+const feedTurns = [];          // all turns received live (newest first)
+const recentTimestamps = [];   // for velocity calc (epoch ms)
+
+function animateBump(el) {
+  el.classList.remove('bump');
+  void el.offsetWidth;
+  el.classList.add('bump');
+  setTimeout(() => el.classList.remove('bump'), 500);
+}
+
+function flashBar() {
+  const bar = document.getElementById('liveBar');
+  bar.classList.add('flash');
+  setTimeout(() => bar.classList.remove('flash'), 600);
+}
+
+// Animated integer count-up (fast, ~300ms)
+function countUp(el, target) {
+  const start = parseFloat(el.dataset.raw || '0');
+  if (start === target) return;
+  el.dataset.raw = target;
+  const steps = 12;
+  let i = 0;
+  const inc = (target - start) / steps;
+  const tick = () => {
+    i++;
+    const v = i >= steps ? target : start + inc * i;
+    el.textContent = fmt(Math.round(v));
+    if (i < steps) requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+}
+
+function calcVelocity() {
+  const now = Date.now();
+  // keep only timestamps within last 5 minutes
+  while (recentTimestamps.length && now - recentTimestamps[0] > 5 * 60 * 1000) {
+    recentTimestamps.shift();
+  }
+  if (recentTimestamps.length < 2) return null;
+  const span = (now - recentTimestamps[0]) / 60000; // minutes
+  return Math.round(recentTimestamps.length / span);
+}
+
+function updateLiveBar(turn) {
+  const liveLabel = document.getElementById('liveLabel');
+  const lsInput   = document.getElementById('lsInput');
+  const lsOutput  = document.getElementById('lsOutput');
+  const lsCacheRead = document.getElementById('lsCacheRead');
+  const lsTurnCost  = document.getElementById('lsTurnCost');
+  const lsVelocity  = document.getElementById('lsVelocity');
+  const lsProject   = document.getElementById('lsProject');
+
+  liveLabel.classList.add('active');
+  flashBar();
+
+  lsInput.textContent    = fmt(turn.input_tokens);
+  lsOutput.textContent   = fmt(turn.output_tokens);
+  lsCacheRead.textContent = fmt(turn.cache_read_input_tokens);
+  lsTurnCost.textContent  = fmtCost(turn.cost);
+
+  animateBump(lsInput);
+  animateBump(lsOutput);
+  animateBump(lsTurnCost);
+
+  const projShort = (turn.projectName || '').split('/').pop() || turn.projectName;
+  lsProject.innerHTML = `<strong>${projShort}</strong> · ${turn.model || 'unknown'} · ${new Date(turn.timestamp).toLocaleTimeString()}`;
+
+  // velocity
+  recentTimestamps.push(Date.now());
+  const vel = calcVelocity();
+  if (vel !== null) {
+    lsVelocity.textContent = vel + ' turns/min';
+  }
+}
+
+function addFeedItem(turn) {
+  feedTurns.unshift(turn); // newest first
+  if (feedTurns.length > MAX_FEED) feedTurns.pop();
+
+  const list = document.getElementById('feedList');
+
+  // Remove empty state if present
+  const empty = list.querySelector('.feed-empty');
+  if (empty) empty.remove();
+
+  const row = document.createElement('div');
+  row.className = 'feed-item';
+
+  const projShort = (turn.projectName || '').split('/').pop() || turn.projectName;
+  const modelShort = (turn.model || 'unknown').split('-').slice(-3).join('-');
+  const time = new Date(turn.timestamp).toLocaleTimeString();
+
+  row.innerHTML = `
+    <span class="fi-time">${time}</span>
+    <span class="fi-proj" title="${turn.projectName}">${projShort}</span>
+    <span class="fi-model">${modelShort}</span>
+    <span class="fi-in">${fmt(turn.input_tokens)}</span>
+    <span class="fi-out">${fmt(turn.output_tokens)}</span>
+    <span class="fi-cost">${fmtCost(turn.cost)}</span>`;
+
+  list.insertBefore(row, list.firstChild);
+  document.getElementById('feedCount').textContent = `(${feedTurns.length})`;
+
+  // cap DOM
+  while (list.children.length > MAX_FEED) list.removeChild(list.lastChild);
+}
+
+// Animate KPI changes
+const kpiRaw = {};
+function animateKpi(id, value) {
+  const el = document.getElementById(id);
+  if (!el || value === undefined) return;
+  const prev = kpiRaw[id] || 0;
+  if (prev === value) return;
+  kpiRaw[id] = value;
+  countUp(el, value);
+}
+
 // ─── WebSocket ────────────────────────────────────────────────────────────────
 
 const liveDot = document.getElementById('liveDot');
@@ -495,12 +750,33 @@ function connect() {
       if (msg.type === 'snapshot' || msg.type === 'update') {
         render(msg.data);
         pulse(liveDot);
+
+        // Animate KPI counters
+        const t = msg.data.claude && msg.data.claude.totals;
+        if (t) {
+          animateKpi('kpiTotal',  t.input + t.output + t.cache_write + t.cache_read);
+          animateKpi('kpiInput',  t.input);
+          animateKpi('kpiOutput', t.output);
+          animateKpi('kpiCacheRead', t.cache_read);
+          animateKpi('kpiSessions', (msg.data.claude.sessions || []).length);
+        }
+      }
+
+      // Handle live new turns (delta)
+      if (msg.type === 'update' && Array.isArray(msg.newTurns) && msg.newTurns.length > 0) {
+        // Process in chronological order, display newest on top
+        for (const turn of msg.newTurns) {
+          addFeedItem(turn);
+        }
+        // Update live bar with the most recent turn
+        updateLiveBar(msg.newTurns[msg.newTurns.length - 1]);
       }
     } catch {}
   });
 
   ws.addEventListener('close', () => {
     liveDot.classList.remove('connected');
+    document.getElementById('liveLabel').classList.remove('active');
     reconnectTimer = setTimeout(connect, 3000);
   });
 

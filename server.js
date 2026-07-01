@@ -193,8 +193,16 @@ function startClaudeWatcher(broadcast) {
     awaitWriteFinish: { stabilityThreshold: 300, pollInterval: 100 },
   });
 
-  watcher.on('add', fp => { parseJSONLFile(fp); broadcast(); });
-  watcher.on('change', fp => { parseJSONLFile(fp); broadcast(); });
+  watcher.on('add', fp => {
+    const before = claudeTurns.length;
+    parseJSONLFile(fp);
+    broadcast(claudeTurns.slice(before));
+  });
+  watcher.on('change', fp => {
+    const before = claudeTurns.length;
+    parseJSONLFile(fp);
+    broadcast(claudeTurns.slice(before));
+  });
   console.log(`[claude] Watching ${CLAUDE_PROJECTS_DIR}`);
 }
 
@@ -369,9 +377,9 @@ wss.on('connection', ws => {
   ws.on('error', () => clients.delete(ws));
 });
 
-function broadcast() {
+function broadcast(newTurns = []) {
   if (clients.size === 0) return;
-  const msg = JSON.stringify({ type: 'update', data: buildSnapshot() });
+  const msg = JSON.stringify({ type: 'update', data: buildSnapshot(), newTurns });
   for (const ws of clients) {
     if (ws.readyState === ws.OPEN) ws.send(msg);
   }
