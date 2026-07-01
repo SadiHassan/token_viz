@@ -1,0 +1,15 @@
+{
+  "name": "claude-viz",
+  "version": "1.0.0",
+  "description": "Real-time token usage visualizer for Claude Code and GitHub Copilot",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "chokidar": "^3.6.0",
+    "dotenv": "^16.4.5",
+    "ws": "^8.18.0"
+  }
+}

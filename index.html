@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Token Visualizer</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --surface2: #232736;
+    --border: #2e3248;
+    --accent: #7c6aff;
+    --accent2: #4ade80;
+    --accent3: #f97316;
+    --accent4: #38bdf8;
+    --accent5: #f43f5e;
+    --text: #e2e8f0;
+    --muted: #64748b;
+    --green: #4ade80;
+    --red: #f43f5e;
+    font-size: 14px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; min-height: 100vh; }
+
+  /* Header */
+  header {
+    display: flex; align-items: center; gap: 12px;
+    padding: 16px 24px; border-bottom: 1px solid var(--border);
+    background: var(--surface); position: sticky; top: 0; z-index: 10;
+  }
+  header h1 { font-size: 1.1rem; font-weight: 600; letter-spacing: -0.02em; }
+  .live-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--muted); transition: background 0.3s;
+    flex-shrink: 0;
+  }
+  .live-dot.connected { background: var(--green); box-shadow: 0 0 6px var(--green); }
+  .live-dot.pulse { animation: pulse 0.6s ease-out; }
+  @keyframes pulse {
+    0%   { transform: scale(1);   opacity: 1; }
+    50%  { transform: scale(1.8); opacity: 0.6; }
+    100% { transform: scale(1);   opacity: 1; }
+  }
+  .source-toggle { display: flex; gap: 4px; margin-left: auto; }
+  .source-toggle button {
+    padding: 5px 12px; border-radius: 6px; border: 1px solid var(--border);
+    background: transparent; color: var(--muted); cursor: pointer; font-size: 0.8rem;
+    transition: all 0.2s;
+  }
+  .source-toggle button.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .updated-at { font-size: 0.72rem; color: var(--muted); margin-left: 8px; }
+
+  /* Layout */
+  main { padding: 24px; display: flex; flex-direction: column; gap: 20px; max-width: 1600px; margin: 0 auto; }
+
+  /* KPI row */
+  .kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
+  .kpi {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+    padding: 16px; display: flex; flex-direction: column; gap: 4px;
+  }
+  .kpi .label { font-size: 0.72rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+  .kpi .value { font-size: 1.5rem; font-weight: 700; letter-spacing: -0.03em; }
+  .kpi .sub { font-size: 0.75rem; color: var(--muted); }
+
+  /* Charts grid */
+  .charts-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+  @media (max-width: 900px) { .charts-grid { grid-template-columns: 1fr; } }
+
+  .card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+    padding: 20px;
+  }
+  .card.full { grid-column: 1 / -1; }
+  .card h2 { font-size: 0.82rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 16px; }
+  .chart-wrap { position: relative; height: 240px; }
+  .chart-wrap.tall { height: 300px; }
+
+  /* Sessions table */
+  .table-wrap { overflow-x: auto; max-height: 320px; overflow-y: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+  thead tr { position: sticky; top: 0; background: var(--surface2); z-index: 1; }
+  th { padding: 8px 12px; text-align: left; color: var(--muted); font-weight: 500; white-space: nowrap; }
+  td { padding: 7px 12px; border-top: 1px solid var(--border); white-space: nowrap; }
+  tr:hover td { background: var(--surface2); }
+  .badge {
+    display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.7rem;
+    background: var(--surface2); color: var(--accent); border: 1px solid var(--border);
+  }
+  .cost-val { color: var(--accent2); font-weight: 600; }
+  .mono { font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.75rem; }
+
+  /* Empty state */
+  .empty {
+    text-align: center; padding: 48px 24px; color: var(--muted);
+  }
+  .empty .icon { font-size: 2.5rem; margin-bottom: 12px; }
+  .empty p { font-size: 0.85rem; line-height: 1.6; }
+  .empty code { background: var(--surface2); padding: 2px 6px; border-radius: 4px; font-size: 0.8rem; }
+
+  /* Copilot section */
+  .copilot-note { font-size: 0.78rem; color: var(--muted); padding: 12px; background: var(--surface2); border-radius: 8px; line-height: 1.6; }
+  .copilot-note a { color: var(--accent4); }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="live-dot" id="liveDot"></div>
+  <h1>Token Visualizer</h1>
+  <div class="source-toggle">
+    <button class="active" data-source="both">Both</button>
+    <button data-source="claude">Claude Code</button>
+    <button data-source="copilot">Copilot</button>
+  </div>
+  <span class="updated-at" id="updatedAt">—</span>
+</header>
+
+<main>
+  <!-- KPI Cards -->
+  <div class="kpi-row" id="kpiRow">
+    <div class="kpi"><div class="label">Total Tokens</div><div class="value" id="kpiTotal">—</div><div class="sub">all time</div></div>
+    <div class="kpi"><div class="label">Input Tokens</div><div class="value" id="kpiInput">—</div><div class="sub">prompt tokens</div></div>
+    <div class="kpi"><div class="label">Output Tokens</div><div class="value" id="kpiOutput">—</div><div class="sub">generated tokens</div></div>
+    <div class="kpi"><div class="label">Cache Read</div><div class="value" id="kpiCacheRead">—</div><div class="sub">saved tokens</div></div>
+    <div class="kpi"><div class="label">Est. Cost</div><div class="value" id="kpiCost" style="color:var(--accent2)">—</div><div class="sub">USD, Claude only</div></div>
+    <div class="kpi"><div class="label">Sessions</div><div class="value" id="kpiSessions">—</div><div class="sub">conversations</div></div>
+  </div>
+
+  <!-- Charts -->
+  <div class="charts-grid">
+
+    <!-- 1. Token Timeline -->
+    <div class="card full">
+      <h2>Token Usage Over Time</h2>
+      <div class="chart-wrap tall"><canvas id="chartTimeline"></canvas></div>
+    </div>
+
+    <!-- 2. Cumulative Cost -->
+    <div class="card">
+      <h2>Cumulative Cost (USD)</h2>
+      <div class="chart-wrap"><canvas id="chartCost"></canvas></div>
+    </div>
+
+    <!-- 3. Input vs Output breakdown -->
+    <div class="card">
+      <h2>Daily Token Breakdown</h2>
+      <div class="chart-wrap"><canvas id="chartBreakdown"></canvas></div>
+    </div>
+
+    <!-- 4. Cache hit/miss donut -->
+    <div class="card">
+      <h2>Cache Hit / Miss</h2>
+      <div class="chart-wrap"><canvas id="chartCache"></canvas></div>
+    </div>
+
+    <!-- 5. Model comparison -->
+    <div class="card">
+      <h2>Token Usage by Model</h2>
+      <div class="chart-wrap"><canvas id="chartModel"></canvas></div>
+    </div>
+
+    <!-- 6. Sessions table -->
+    <div class="card full">
+      <h2>Sessions</h2>
+      <div class="table-wrap" id="sessionsWrap">
+        <div class="empty"><div class="icon">🔍</div><p>No session data yet.<br>Make sure <code>~/.claude/projects/</code> exists and has session files.</p></div>
+      </div>
+    </div>
+
+    <!-- 7. Copilot section -->
+    <div class="card full" id="copilotSection" style="display:none">
+      <h2>GitHub Copilot Usage (Daily Aggregate)</h2>
+      <div class="chart-wrap"><canvas id="chartCopilot"></canvas></div>
+    </div>
+
+  </div>
+</main>
+
+<script>
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function fmt(n) {
+  if (n === undefined || n === null) return '—';
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(2) + 'M';
+  if (n >= 1_000) return (n / 1_000).toFixed(1) + 'K';
+  return n.toLocaleString();
+}
+function fmtCost(n) {
+  if (!n) return '$0.00';
+  if (n < 0.01) return '<$0.01';
+  return '$' + n.toFixed(2);
+}
+function fmtDate(iso) {
+  if (!iso) return '';
+  return new Date(iso).toLocaleString();
+}
+function pulse(el) {
+  el.classList.remove('pulse');
+  void el.offsetWidth;
+  el.classList.add('pulse');
+  setTimeout(() => el.classList.remove('pulse'), 700);
+}
+
+// ─── Chart defaults ───────────────────────────────────────────────────────────
+
+Chart.defaults.color = '#64748b';
+Chart.defaults.borderColor = '#2e3248';
+Chart.defaults.font.family = "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+Chart.defaults.font.size = 11;
+
+const COLORS = {
+  input:       '#7c6aff',
+  output:      '#4ade80',
+  cache_write: '#f97316',
+  cache_read:  '#38bdf8',
+  cost:        '#f43f5e',
+};
+
+function makeChart(id, config) {
+  const ctx = document.getElementById(id).getContext('2d');
+  return new Chart(ctx, config);
+}
+
+function lineDataset(label, data, color, fill=false) {
+  return {
+    label, data, borderColor: color, backgroundColor: fill ? color + '22' : 'transparent',
+    fill, tension: 0.35, pointRadius: 3, pointHoverRadius: 5, borderWidth: 2,
+  };
+}
+
+function barDataset(label, data, color) {
+  return { label, data, backgroundColor: color + 'cc', borderRadius: 3, borderWidth: 0 };
+}
+
+// ─── Chart instances ──────────────────────────────────────────────────────────
+
+const chartTimeline = makeChart('chartTimeline', {
+  type: 'line',
+  data: { labels: [], datasets: [] },
+  options: {
+    responsive: true, maintainAspectRatio: false,
+    interaction: { mode: 'index', intersect: false },
+    plugins: { legend: { position: 'top' }, tooltip: { callbacks: {
+      label: ctx => ` ${ctx.dataset.label}: ${fmt(ctx.raw)}`
+    }}},
+    scales: {
+      x: { grid: { color: '#2e3248' } },
+      y: { grid: { color: '#2e3248' }, ticks: { callback: v => fmt(v) } },
+    },
+  },
+});
+
+const chartCost = makeChart('chartCost', {
+  type: 'line',
+  data: { labels: [], datasets: [] },
+  options: {
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { display: false }, tooltip: { callbacks: {
+      label: ctx => ` Cumulative Cost: ${fmtCost(ctx.raw)}`
+    }}},
+    scales: {
+      x: { grid: { color: '#2e3248' } },
+      y: { grid: { color: '#2e3248' }, ticks: { callback: v => fmtCost(v) } },
+    },
+  },
+});
+
+const chartBreakdown = makeChart('chartBreakdown', {
+  type: 'bar',
+  data: { labels: [], datasets: [] },
+  options: {
+    responsive: true, maintainAspectRatio: false,
+    interaction: { mode: 'index', intersect: false },
+    plugins: { legend: { position: 'top' }, tooltip: { callbacks: {
+      label: ctx => ` ${ctx.dataset.label}: ${fmt(ctx.raw)}`
+    }}},
+    scales: {
+      x: { stacked: true, grid: { color: '#2e3248' } },
+      y: { stacked: true, grid: { color: '#2e3248' }, ticks: { callback: v => fmt(v) } },
+    },
+  },
+});
+
+const chartCache = makeChart('chartCache', {
+  type: 'doughnut',
+  data: { labels: ['Cache Read (saved)', 'Cache Write', 'Direct Input', 'Output'], datasets: [] },
+  options: {
+    responsive: true, maintainAspectRatio: false,
+    plugins: {
+      legend: { position: 'right', labels: { boxWidth: 12, padding: 14 } },
+      tooltip: { callbacks: { label: ctx => ` ${ctx.label}: ${fmt(ctx.raw)} tokens` } },
+    },
+    cutout: '62%',
+  },
+});
+
+const chartModel = makeChart('chartModel', {
+  type: 'bar',
+  data: { labels: [], datasets: [] },
+  options: {
+    responsive: true, maintainAspectRatio: false, indexAxis: 'y',
+    plugins: { legend: { display: false }, tooltip: { callbacks: {
+      label: ctx => ` ${fmt(ctx.raw)} tokens`
+    }}},
+    scales: {
+      x: { grid: { color: '#2e3248' }, ticks: { callback: v => fmt(v) } },
+      y: { grid: { display: false } },
+    },
+  },
+});
+
+const chartCopilot = makeChart('chartCopilot', {
+  type: 'bar',
+  data: { labels: [], datasets: [] },
+  options: {
+    responsive: true, maintainAspectRatio: false,
+    interaction: { mode: 'index', intersect: false },
+    plugins: { legend: { position: 'top' } },
+    scales: {
+      x: { grid: { color: '#2e3248' } },
+      y: { grid: { color: '#2e3248' } },
+    },
+  },
+});
+
+// ─── Render ───────────────────────────────────────────────────────────────────
+
+let currentSource = 'both';
+let lastSnapshot = null;
+
+document.querySelectorAll('.source-toggle button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.source-toggle button').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    currentSource = btn.dataset.source;
+    if (lastSnapshot) render(lastSnapshot);
+  });
+});
+
+function render(snap) {
+  lastSnapshot = snap;
+  document.getElementById('updatedAt').textContent = 'Updated ' + new Date(snap.updatedAt).toLocaleTimeString();
+
+  const c = snap.claude;
+  const showClaude = currentSource === 'both' || currentSource === 'claude';
+  const showCopilot = currentSource === 'both' || currentSource === 'copilot';
+
+  // ── KPIs ──
+  if (showClaude && c.totals) {
+    const t = c.totals;
+    document.getElementById('kpiTotal').textContent = fmt(t.input + t.output + t.cache_write + t.cache_read);
+    document.getElementById('kpiInput').textContent = fmt(t.input);
+    document.getElementById('kpiOutput').textContent = fmt(t.output);
+    document.getElementById('kpiCacheRead').textContent = fmt(t.cache_read);
+    document.getElementById('kpiCost').textContent = fmtCost(t.cost);
+    document.getElementById('kpiSessions').textContent = fmt(c.sessions ? c.sessions.length : 0);
+  }
+
+  // ── Timeline ──
+  if (showClaude && c.daily && c.daily.length > 0) {
+    const labels = c.daily.map(d => d.day);
+    chartTimeline.data.labels = labels;
+    chartTimeline.data.datasets = [
+      lineDataset('Input', c.daily.map(d => d.input), COLORS.input),
+      lineDataset('Output', c.daily.map(d => d.output), COLORS.output),
+      lineDataset('Cache Read', c.daily.map(d => d.cache_read), COLORS.cache_read),
+    ];
+    chartTimeline.update();
+  }
+
+  // ── Cumulative Cost ──
+  if (showClaude && c.cumulativeCost && c.cumulativeCost.length > 0) {
+    chartCost.data.labels = c.cumulativeCost.map(d => d.day);
+    chartCost.data.datasets = [lineDataset('Cost', c.cumulativeCost.map(d => d.cost), COLORS.cost, true)];
+    chartCost.update();
+  }
+
+  // ── Breakdown ──
+  if (showClaude && c.daily && c.daily.length > 0) {
+    chartBreakdown.data.labels = c.daily.map(d => d.day);
+    chartBreakdown.data.datasets = [
+      barDataset('Input', c.daily.map(d => d.input), COLORS.input),
+      barDataset('Output', c.daily.map(d => d.output), COLORS.output),
+      barDataset('Cache Write', c.daily.map(d => d.cache_write), COLORS.cache_write),
+      barDataset('Cache Read', c.daily.map(d => d.cache_read), COLORS.cache_read),
+    ];
+    chartBreakdown.update();
+  }
+
+  // ── Cache donut ──
+  if (showClaude && c.totals) {
+    const t = c.totals;
+    chartCache.data.datasets = [{
+      data: [t.cache_read, t.cache_write, t.input, t.output],
+      backgroundColor: [COLORS.cache_read + 'cc', COLORS.cache_write + 'cc', COLORS.input + 'cc', COLORS.output + 'cc'],
+      borderWidth: 0,
+    }];
+    chartCache.update();
+  }
+
+  // ── Model comparison ──
+  if (showClaude && c.byModel && c.byModel.length > 0) {
+    const models = c.byModel.slice(0, 8);
+    chartModel.data.labels = models.map(m => m.model || 'unknown');
+    chartModel.data.datasets = [{
+      label: 'Total Tokens',
+      data: models.map(m => m.input + m.output),
+      backgroundColor: [COLORS.input, COLORS.output, COLORS.cache_read, COLORS.cache_write, COLORS.cost,
+                        '#a78bfa', '#fb923c', '#34d399'].map(c => c + 'cc'),
+      borderRadius: 4, borderWidth: 0,
+    }];
+    chartModel.update();
+  }
+
+  // ── Sessions table ──
+  const sessWrap = document.getElementById('sessionsWrap');
+  if (showClaude && c.sessions && c.sessions.length > 0) {
+    const rows = c.sessions.map(s => `
+      <tr>
+        <td class="mono">${s.sessionId.slice(0, 8)}…</td>
+        <td>${s.projectName}</td>
+        <td>${new Date(s.lastTs).toLocaleString()}</td>
+        <td>${s.turns}</td>
+        <td>${fmt(s.input + s.output)}</td>
+        <td>${fmt(s.input)}</td>
+        <td>${fmt(s.output)}</td>
+        <td>${fmt(s.cache_read)}</td>
+        <td class="cost-val">${fmtCost(s.cost)}</td>
+        <td>${s.models.map(m => `<span class="badge">${m.split('-').slice(-2).join('-')}</span>`).join(' ')}</td>
+      </tr>`).join('');
+    sessWrap.innerHTML = `
+      <table>
+        <thead><tr>
+          <th>Session ID</th><th>Project</th><th>Last Active</th>
+          <th>Turns</th><th>Total Tokens</th><th>Input</th><th>Output</th>
+          <th>Cache Read</th><th>Cost</th><th>Models</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+  } else {
+    sessWrap.innerHTML = `<div class="empty">
+      <div class="icon">🔍</div>
+      <p>No Claude Code session data found.<br>
+      Ensure <code>~/.claude/projects/</code> exists and you have active sessions.</p>
+    </div>`;
+  }
+
+  // ── Copilot section ──
+  const copilotSection = document.getElementById('copilotSection');
+  if (showCopilot && snap.copilot && snap.copilot.days && snap.copilot.days.length > 0) {
+    copilotSection.style.display = '';
+    const days = snap.copilot.days;
+    chartCopilot.data.labels = days.map(d => d.date);
+    chartCopilot.data.datasets = [
+      barDataset('Suggestions', days.map(d => d.total_suggestions_count), '#7c6aff'),
+      barDataset('Acceptances', days.map(d => d.total_acceptances_count), '#4ade80'),
+      barDataset('Active Users', days.map(d => d.total_active_users), '#38bdf8'),
+    ];
+    chartCopilot.update();
+  } else if (currentSource === 'copilot') {
+    copilotSection.style.display = '';
+    copilotSection.innerHTML += `<div class="copilot-note">
+      Copilot data requires a <code>GITHUB_TOKEN</code> with <code>manage_billing:copilot</code> scope
+      set in <code>.env</code>. Individual token counts are not available from the GitHub API —
+      only daily aggregate stats (suggestions, acceptances, active users) are returned.
+      <a href="https://docs.github.com/en/rest/copilot/copilot-usage" target="_blank" rel="noopener">GitHub Copilot Usage API →</a>
+    </div>`;
+  } else {
+    copilotSection.style.display = 'none';
+  }
+}
+
+// ─── WebSocket ────────────────────────────────────────────────────────────────
+
+const liveDot = document.getElementById('liveDot');
+let ws = null;
+let reconnectTimer = null;
+
+function connect() {
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  ws = new WebSocket(`${proto}//${location.host}`);
+
+  ws.addEventListener('open', () => {
+    liveDot.classList.add('connected');
+    clearTimeout(reconnectTimer);
+  });
+
+  ws.addEventListener('message', evt => {
+    try {
+      const msg = JSON.parse(evt.data);
+      if (msg.type === 'snapshot' || msg.type === 'update') {
+        render(msg.data);
+        pulse(liveDot);
+      }
+    } catch {}
+  });
+
+  ws.addEventListener('close', () => {
+    liveDot.classList.remove('connected');
+    reconnectTimer = setTimeout(connect, 3000);
+  });
+
+  ws.addEventListener('error', () => {
+    ws.close();
+  });
+}
+
+connect();
+</script>
+</body>
+</html>
