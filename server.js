@@ -18,15 +18,30 @@ const COPILOT_POLL_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 
 // Pricing per 1M tokens (USD) — update as Anthropic changes rates
 const PRICING = {
-  'claude-opus-4-5':          { input: 15.00, output: 75.00, cache_write: 18.75, cache_read: 1.50 },
-  'claude-opus-4':            { input: 15.00, output: 75.00, cache_write: 18.75, cache_read: 1.50 },
-  'claude-sonnet-4-5':        { input:  3.00, output: 15.00, cache_write:  3.75, cache_read: 0.30 },  'claude-sonnet-4-6':            { input:  3.00, output: 15.00, cache_write:  3.75, cache_read: 0.30 },  'claude-sonnet-4':          { input:  3.00, output: 15.00, cache_write:  3.75, cache_read: 0.30 },
-  'claude-3-7-sonnet-20250219': { input: 3.00, output: 15.00, cache_write: 3.75, cache_read: 0.30 },
-  'claude-3-5-sonnet-20241022': { input: 3.00, output: 15.00, cache_write: 3.75, cache_read: 0.30 },
-  'claude-3-5-sonnet-20240620': { input: 3.00, output: 15.00, cache_write: 3.75, cache_read: 0.30 },
-  'claude-haiku-4':           { input:  0.80, output:  4.00, cache_write:  1.00, cache_read: 0.08 },
-  'claude-3-5-haiku-20241022': { input: 0.80, output:  4.00, cache_write:  1.00, cache_read: 0.08 },
-  'claude-3-haiku-20240307':  { input:  0.25, output:  1.25, cache_write:  0.30, cache_read: 0.03 },
+  // Claude Fable Family (most capable; above Opus tier)
+  'claude-fable-5':             { input: 10.00, output: 50.00, cache_write: 12.50, cache_read: 1.00 },
+  'claude-mythos-5':            { input: 10.00, output: 50.00, cache_write: 12.50, cache_read: 1.00 },
+
+  // Claude Opus Family — 4.5/4.6/4.7/4.8 share the standard $5/$25 tier.
+  // NOTE: longer keys must precede shorter ones so prefix-matching prefers the specific tier.
+  'claude-opus-4-8':            { input: 5.00,  output: 25.00, cache_write: 6.25,  cache_read: 0.50 },
+  'claude-opus-4-7':            { input: 5.00,  output: 25.00, cache_write: 6.25,  cache_read: 0.50 },
+  'claude-opus-4-6':            { input: 5.00,  output: 25.00, cache_write: 6.25,  cache_read: 0.50 },
+  'claude-opus-4-5':            { input: 5.00,  output: 25.00, cache_write: 6.25,  cache_read: 0.50 },
+  'claude-opus-4':              { input: 15.00, output: 75.00, cache_write: 18.75, cache_read: 1.50 }, // Pinned legacy Opus 4.0/4.1 pricing
+
+  // Claude Sonnet Family (All standard models are normalized to $3/$15)
+  'claude-sonnet-4-5':          { input: 3.00,  output: 15.00, cache_write: 3.75,  cache_read: 0.30 },  
+  'claude-sonnet-4-6':          { input: 3.00,  output: 15.00, cache_write: 3.75,  cache_read: 0.30 },
+  'claude-sonnet-4':            { input: 3.00,  output: 15.00, cache_write: 3.75,  cache_read: 0.30 }, // Pinned legacy/cloud tier
+  'claude-3-7-sonnet-20250219': { input: 3.00,  output: 15.00, cache_write: 3.75,  cache_read: 0.30 }, 
+  'claude-3-5-sonnet-20241022': { input: 3.00,  output: 15.00, cache_write: 3.75,  cache_read: 0.30 },
+  'claude-3-5-sonnet-20240620': { input: 3.00,  output: 15.00, cache_write: 3.75,  cache_read: 0.30 },
+
+  // Claude Haiku Family
+  'claude-haiku-4':             { input: 1.00,  output: 5.00,  cache_write: 1.25,  cache_read: 0.10 }, // Updated to Haiku 4.5/4 standard tier
+  'claude-3-5-haiku-20241022':  { input: 0.80,  output: 4.00,  cache_write: 1.00,  cache_read: 0.08 }, // Maintained legacy 3.5 price
+  'claude-3-haiku-20240307':    { input: 0.25,  output: 1.25,  cache_write: 0.3125,cache_read: 0.025 }, // Exact 1.25x/0.10x math on base $0.25
 };
 
 function getPricing(model) {
@@ -38,9 +53,10 @@ function getPricing(model) {
   for (const key of Object.keys(PRICING)) {
     if (lower.startsWith(key) || key.startsWith(lower)) return PRICING[key];
   }
-  // Fuzzy: find by family
-  if (lower.includes('opus'))   return PRICING['claude-opus-4'];
-  if (lower.includes('sonnet')) return PRICING['claude-sonnet-4-5'];
+  // Fuzzy: find by family (point at current standard tiers, not legacy)
+  if (lower.includes('fable') || lower.includes('mythos')) return PRICING['claude-fable-5'];
+  if (lower.includes('opus'))   return PRICING['claude-opus-4-8'];
+  if (lower.includes('sonnet')) return PRICING['claude-sonnet-4-6'];
   if (lower.includes('haiku'))  return PRICING['claude-haiku-4'];
   return null;
 }
@@ -86,6 +102,12 @@ const copilotDays = [];
 // Track byte offsets per file to avoid re-parsing old lines
 const fileOffsets = new Map(); // filePath → bytes read so far
 
+// Claude Code writes one JSONL line per content block, and every line for a
+// turn repeats the same message.id + identical message.usage. Counting each
+// line double-counts a turn's tokens. Track seen message ids so each assistant
+// message's usage is counted exactly once.
+const seenMessageIds = new Set();
+
 // ─── Claude Code Parser ───────────────────────────────────────────────────────
 
 function projectNameFromPath(filePath) {
@@ -101,6 +123,7 @@ function projectNameFromPath(filePath) {
 }
 
 function parseJSONLFile(filePath) {
+  console.log(`[claude] Parsing ${filePath}`);
   const projectName = projectNameFromPath(filePath);
   // For subagent files the UUID is the parent dir; for top-level it's the filename
   const parts = filePath.split(path.sep);
@@ -140,6 +163,13 @@ function parseJSONLFile(filePath) {
       const usage = obj.usage || (obj.message && obj.message.usage);
       if (!usage) continue;
       if (!usage.input_tokens && !usage.output_tokens) continue;
+
+      // Dedupe: skip content-block lines that repeat an already-counted turn
+      const msgId = (obj.message && obj.message.id) || obj.id;
+      if (msgId) {
+        if (seenMessageIds.has(msgId)) continue;
+        seenMessageIds.add(msgId);
+      }
 
       const actualModel = obj.model || (obj.message && obj.message.model) || '';
       const ts = obj.timestamp || obj.ts || new Date().toISOString();
@@ -321,6 +351,33 @@ function buildSnapshot() {
   }
   const byModel = Array.from(modelMap.values()).sort((a, b) => b.cost - a.cost);
 
+  // Today's hourly totals (local time) — 24 buckets, hour 0..23
+  const now = new Date();
+  const pad = n => String(n).padStart(2, '0');
+  const localDayKey = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  const todayKey = localDayKey(now);
+  const todayHourly = Array.from({ length: 24 }, (_, hour) => ({
+    hour, input: 0, output: 0, cache_write: 0, cache_read: 0, tokens: 0, cost: 0, turns: 0,
+  }));
+  let todayTokens = 0, todayCost = 0, todayTurns = 0;
+  for (const t of sorted) {
+    const d = new Date(t.timestamp);
+    if (localDayKey(d) !== todayKey) continue;
+    const b = todayHourly[d.getHours()];
+    const tk = t.input_tokens + t.output_tokens + t.cache_creation_input_tokens + t.cache_read_input_tokens;
+    b.input += t.input_tokens;
+    b.output += t.output_tokens;
+    b.cache_write += t.cache_creation_input_tokens;
+    b.cache_read += t.cache_read_input_tokens;
+    b.tokens += tk;
+    b.cost += t.cost;
+    b.turns++;
+    todayTokens += tk;
+    todayCost += t.cost;
+    todayTurns++;
+  }
+  const today = { date: todayKey, hourly: todayHourly, tokens: todayTokens, cost: todayCost, turns: todayTurns };
+
   // Overall totals
   const totals = sorted.reduce((acc, t) => {
     acc.input += t.input_tokens;
@@ -333,7 +390,7 @@ function buildSnapshot() {
   }, { input: 0, output: 0, cache_write: 0, cache_read: 0, cost: 0, turns: 0 });
 
   return {
-    claude: { daily, cumulativeCost, sessions, byModel, totals },
+    claude: { daily, cumulativeCost, sessions, byModel, totals, today },
     copilot: { days: copilotDays },
     updatedAt: new Date().toISOString(),
   };

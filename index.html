@@ -256,6 +256,18 @@
   <!-- Charts -->
   <div class="charts-grid">
 
+    <!-- 0a. Today's tokens by hour -->
+    <div class="card">
+      <h2>Today · Tokens by Hour <span id="todayTokensTotal" style="color:var(--muted);font-weight:400"></span></h2>
+      <div class="chart-wrap"><canvas id="chartTodayTokens"></canvas></div>
+    </div>
+
+    <!-- 0b. Today's cost by hour -->
+    <div class="card">
+      <h2>Today · Cost by Hour <span id="todayCostTotal" style="color:var(--accent2);font-weight:400"></span></h2>
+      <div class="chart-wrap"><canvas id="chartTodayCost"></canvas></div>
+    </div>
+
     <!-- 1. Token Timeline -->
     <div class="card full">
       <h2>Token Usage Over Time</h2>
@@ -418,6 +430,37 @@ const chartBreakdown = makeChart('chartBreakdown', {
   },
 });
 
+const chartTodayTokens = makeChart('chartTodayTokens', {
+  type: 'bar',
+  data: { labels: [], datasets: [] },
+  options: {
+    responsive: true, maintainAspectRatio: false,
+    interaction: { mode: 'index', intersect: false },
+    plugins: { legend: { position: 'top' }, tooltip: { callbacks: {
+      label: ctx => ` ${ctx.dataset.label}: ${fmt(ctx.raw)}`
+    }}},
+    scales: {
+      x: { stacked: true, grid: { display: false } },
+      y: { stacked: true, grid: { color: '#2e3248' }, ticks: { callback: v => fmt(v) } },
+    },
+  },
+});
+
+const chartTodayCost = makeChart('chartTodayCost', {
+  type: 'bar',
+  data: { labels: [], datasets: [] },
+  options: {
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { display: false }, tooltip: { callbacks: {
+      label: ctx => ` Cost: ${fmtCost(ctx.raw)}`
+    }}},
+    scales: {
+      x: { grid: { display: false } },
+      y: { grid: { color: '#2e3248' }, ticks: { callback: v => fmtCost(v) } },
+    },
+  },
+});
+
 const chartCache = makeChart('chartCache', {
   type: 'doughnut',
   data: { labels: ['Cache Read (saved)', 'Cache Write', 'Direct Input', 'Output'], datasets: [] },
@@ -491,6 +534,28 @@ function render(snap) {
     document.getElementById('kpiCacheRead').textContent = fmt(t.cache_read);
     document.getElementById('kpiCost').textContent = fmtCost(t.cost);
     document.getElementById('kpiSessions').textContent = fmt(c.sessions ? c.sessions.length : 0);
+  }
+
+  // ── Today by hour ──
+  if (showClaude && c.today && c.today.hourly) {
+    const h = c.today.hourly;
+    const labels = h.map(x => String(x.hour).padStart(2, '0') + ':00');
+
+    chartTodayTokens.data.labels = labels;
+    chartTodayTokens.data.datasets = [
+      barDataset('Input', h.map(x => x.input), COLORS.input),
+      barDataset('Output', h.map(x => x.output), COLORS.output),
+      barDataset('Cache Write', h.map(x => x.cache_write), COLORS.cache_write),
+      barDataset('Cache Read', h.map(x => x.cache_read), COLORS.cache_read),
+    ];
+    chartTodayTokens.update();
+
+    chartTodayCost.data.labels = labels;
+    chartTodayCost.data.datasets = [barDataset('Cost', h.map(x => x.cost), COLORS.cost)];
+    chartTodayCost.update();
+
+    document.getElementById('todayTokensTotal').textContent = `· ${fmt(c.today.tokens)} total`;
+    document.getElementById('todayCostTotal').textContent = `· ${fmtCost(c.today.cost)} total`;
   }
 
   // ── Timeline ──
